@@ -1,89 +1,100 @@
-# Elastic and AWS Hack Night (World Cup Edition)
+# World Cup 2026 — Elastic Semantic Search & Prediction Agents
 
-Welcome to the **Elastic and AWS Hack Night**! Tonight you'll build a project using **Elasticsearch** and **public soccer datasets** to create search experiences, AI applications, or anything else you can imagine.
+**A live 2026 FIFA World Cup match predictor and semantic "vibe search" match explorer, built on Elasticsearch Serverless, Elastic Agent Builder, and AWS Bedrock via the Elastic Inference Service (EIS) — zero LLM API keys required.**
 
-Whether you're exploring semantic search, building a RAG chatbot, or experimenting with vector search, this is your chance to showcase what's possible with Elasticsearch.
+Two AI agents run on top of one continuously-updating Elasticsearch dataset:
 
-## Judging Criteria and Presentations
+- **Predictor agent** — ask *"Predict Paraguay vs France"* or *"Compare Brazil and Morocco based on their 2026 results"* and get a grounded prediction, backed by custom **ES|QL** tools that aggregate real match data (form, standings, head-to-head) — no hallucinated stats.
+- **Match Explorer agent** — ask *"Show me the most dramatic comebacks of the tournament"* and get results from **semantic vector search** over AI-generated natural-language narratives of every played match, auto-embedded by EIS on AWS Bedrock at index time.
 
-Projects will be evaluated on the following:
+Both indices are kept fresh by lightweight Python pollers that re-fetch tournament results and upsert/re-embed only what changed — so the agents are always talking about tonight's real scores, not a static snapshot.
 
-| Criteria | Description |
-|----------|-------------|
-| **Use of Elasticsearch** | Demonstrates meaningful use of Elasticsearch features such as search, aggregations, vector search, and Agent Builder. |
-| **Use of AWS Bedrock** | Use of a managed LLM through AWS Bedrock. The easiest path is the **Elastic Inference Service (EIS)** - its LLM and embedding models are hosted on Bedrock with zero setup, so the built-in Agent Builder chat already counts. See the [EIS guide](https://github.com/jdarmada/elastic-aws-hacknight/blob/main/eis_guide.md). |
-| **Creativity** | Presents a unique idea, novel user experience, or interesting technical implementation. |
-| **Usefulness** | Solves a real problem or provides valuable insights from the data. |
+## How it works
 
-At the end, you'll have the chance to present what you built, no matter how complete your project is. Don't be shy! It's in the spirit of the event to show off your ideas even if it's not done. 
+```
+openfootball/worldcup.json (public JSON API)
+              │
+   ┌──────────┴──────────┐
+   ▼                      ▼
+poll_live.py        build_narratives.py
+(upsert every       (generate + embed narrative
+ N seconds)           per played match, incremental)
+   │                      │
+   ▼                      ▼
+wc2026_matches        wc2026_narratives
+(structured index,    (semantic_text field,
+ ES|QL analytics)      auto-embedded via EIS/Bedrock)
+   │                      │
+   ▼                      ▼
+Predictor Agent       Match Explorer Agent
+(ES|QL custom tools:  (Index Search / semantic
+ form, stats,          query — "dramatic comebacks",
+ fixtures, standings)  "tight knockout games", ...)
+```
 
-Some presentation guidelines:
-- **1-2 mins max**
-- Quickly mention what the project does, but more importantly, show the Elasticsearch portion from the queries you used, the custom tools and agents you built within Agent Builder.
+- **`world_cup_predictor.ipynb`** — the initial data-ingest notebook: fetches the full 2026 tournament schedule/results, builds the `wc2026_matches` mapping (nested goals, stage, winner, etc.), and bulk-indexes everything into Elasticsearch Serverless.
+- **`poll_live.py`** — a live-ish poller that re-fetches results on an interval and **upserts** into `wc2026_matches` with deterministic per-match IDs, so an "upcoming" fixture flips to "played" in place instead of duplicating documents.
+- **`build_narratives.py`** — generates a natural-language story for every played match (margin, comeback detection, scorer clauses) and indexes it into `wc2026_narratives` as a `semantic_text` field. EIS auto-embeds it on AWS Bedrock at index time — no model deployment, no separate API keys. Incremental by design: a match is only (re-)embedded when its narrative text is new or changed.
+- **`DEMO.md`** — a 90-second demo script covering both agents, sample prompts, and a Dev Tools query that proves the semantic search is real vector similarity, not keyword matching.
 
-## Prizes
+## Tech stack
 
-The **top three projects** will each win a pair of **Meta Ray-Ban Smart Glasses**.
+`Elasticsearch` `Elastic Serverless` `Elastic Agent Builder` `Elastic Inference Service (EIS)` `AWS Bedrock` `semantic_text` `vector search` `kNN` `ES|QL` `RAG` `retrieval-augmented generation` `Python` `openfootball` `sports analytics` `FIFA World Cup 2026`
 
-Good luck, have fun, and happy hacking!
+## Setup
 
-## What you can build
+Requirements: Python 3.9+, an [Elastic Cloud Serverless](https://www.elastic.co/cloud/cloud-trial-overview) project, and its endpoint + API key.
 
-You have the choice on where to start:
-1. Head to [starter_project.md](https://github.com/jdarmada/elastic-aws-hacknight/blob/main/starter_project.md) and follow the steps to build the World Cup Predictor agent. Extend this project by adding more data, queries, features, nuance etc.
-2. A completely new project that uses Elasticsearch, AWS Bedrock (through EIS) and soccer data in some capacity. Head over to [open_challenge.md](https://github.com/jdarmada/elastic-aws-hacknight/blob/main/open_challenge.md) for examples of what you can build and an example of how to ingest data.
+```bash
+pip install elasticsearch requests
+cp .env .env.local   # or just export directly
+export ELASTIC_ENDPOINT="https://your-project.es.region.aws.elastic.cloud:443"
+export ELASTIC_API_KEY="your-elastic-api-key"
+```
 
-Either direction you follow you must use a serverless Elastic deployment: [Elastic Cloud Serverless free-trial](https://www.elastic.co/cloud/cloud-trial-overview)
+1. Run `world_cup_predictor.ipynb` once to create and populate `wc2026_matches`.
+2. Build the semantic index:
+   ```bash
+   python build_narratives.py            # incremental one-shot
+   python build_narratives.py --watch --interval 120
+   ```
+3. Keep raw results current:
+   ```bash
+   python poll_live.py --interval 120
+   ```
+4. In Kibana, wire up **Agent Builder** agents on top of the two indices — see `agent_builder_guide.md` and `starter_project.md` for the ES|QL tool definitions and agent configs used here, and `eis_guide.md` for using EIS as the agent LLM and embedding model with zero keys.
 
-**Need an LLM or embeddings?** Use the **Elastic Inference Service (EIS)** - Bedrock-hosted models with no API keys and no setup. See the [EIS guide](https://github.com/jdarmada/elastic-aws-hacknight/blob/main/eis_guide.md) for using it as your agent's LLM, for semantic search, and for embeddings.
+## Proof it's real semantic search
 
+```
+GET wc2026_narratives/_search
+{
+  "query": { "semantic": { "field": "narrative", "query": "tense low-scoring knockout games" } }
+}
+```
 
-## Public Soccer Datasets
+The word "comeback" or "knockout" is never stored as a filter — matches are ranked by embedding similarity over the generated narrative text.
 
-These are publicly available soccer datasets for player performance analysis, match data, and event-level analytics. You are not restricted to these, feel free to use any dataset you find.
+## Repository layout
 
-| Dataset | Description | Data Type |
-|---------|-------------|-----------|
-| **[FIFA World Cup 2026 Player Performance Dataset](https://www.kaggle.com/datasets/rauffauzanrambe/fifa-world-cup-2026-player-performance-dataset)** | Simulated/player performance dataset for the FIFA World Cup 2026. Includes player statistics, match performance metrics, team information, and tournament-related data suitable for machine learning and analytics. | Player & Match Statistics |
-| **[openfootball/worldcup.json](https://github.com/openfootball/worldcup.json)** | Open-source JSON dataset containing historical FIFA World Cup tournaments, including teams, fixtures, match results, venues, and tournament structure in an easy-to-use format. | Historical Match Results |
-| **[StatsBomb Open Data](https://github.com/statsbomb/open-data)** | One of the most comprehensive free football analytics datasets available. Provides detailed event-level data (passes, shots, dribbles, pressures, tackles, etc.), lineups, matches, competitions, and 360° data for selected competitions. Widely used in football analytics research and visualization. :contentReference[oaicite:0]{index=0} | Event-Level Match Data |
+| path | what it is |
+|---|---|
+| `world_cup_predictor.ipynb` | one-time ingest notebook: fetch, enrich, bulk-index `wc2026_matches` |
+| `build_narratives.py` | generates + incrementally embeds match narratives into `wc2026_narratives` |
+| `poll_live.py` | live upsert poller for `wc2026_matches` |
+| `DEMO.md` | 90-second demo script and judge cheat sheet |
+| `agent_builder_guide.md` | reference for building Elastic Agent Builder tools/agents |
+| `eis_guide.md` | reference for using Elastic Inference Service (Bedrock-hosted LLM/embeddings, no keys) |
+| `starter_project.md`, `open_challenge.md` | original event background/prompts this project grew out of |
 
+## Credential handling
 
-## Resources
+`.env` is gitignored and never committed. The notebook ships with placeholder `ELASTIC_ENDPOINT`/`ELASTIC_API_KEY` values — fill in your own Elastic Cloud Serverless credentials locally; never commit real ones.
 
-Handy documentation and references for building tonight.
+## Background
 
-### Getting started
-- [Elasticsearch quickstart](https://www.elastic.co/docs/solutions/search/get-started) - your first index and query
-- [Connecting to Elasticsearch](https://www.elastic.co/docs/reference/elasticsearch/clients) - endpoints, API keys, and client setup
+Built during Elastic's **AWS Hack Night (World Cup Edition)**. The starter notebook and event docs (`README` content below the fold, `agent_builder_guide.md`, `eis_guide.md`, `open_challenge.md`, `starter_project.md`) were provided by the organizers; the live-updating pollers, the semantic Match Explorer agent, and the incremental embedding pipeline were built at the event.
 
-### Agent Builder
-- [Agent Builder overview](https://www.elastic.co/docs/explore-analyze/ai-features/elastic-agent-builder)
-- [Building custom tools](https://www.elastic.co/docs/explore-analyze/ai-features/agent-builder/tools/custom-tools)
-- [Building custom agents](https://www.elastic.co/docs/explore-analyze/ai-features/agent-builder/custom-agents)
-- [Expose agents over MCP](https://www.elastic.co/docs/explore-analyze/ai-features/agent-builder/mcp-server) - connect to Claude Desktop or your own app
+---
 
-### Search & querying
-- [ES|QL reference](https://www.elastic.co/docs/explore-analyze/query-filter/languages/esql) - the query language the starter tools use
-- [Query DSL](https://www.elastic.co/docs/explore-analyze/query-filter/languages/querydsl) - full-text, filters, and boolean queries
-- [Aggregations](https://www.elastic.co/docs/explore-analyze/query-filter/aggregations) - stats, terms, and metrics for dashboards
-- [Search relevance & autocomplete](https://www.elastic.co/docs/solutions/search/full-text) - for player/team search experiences
-
-### Vector & semantic search (great for RAG and "similar player" ideas)
-- [Semantic search with `semantic_text`](https://www.elastic.co/docs/solutions/search/semantic-search/semantic-search-semantic-text) - the fastest path to semantic search
-- [kNN / dense vector search](https://www.elastic.co/docs/solutions/search/vector/knn)
-- [Bringing your own embeddings](https://www.elastic.co/docs/reference/elasticsearch/mapping-reference/dense-vector)
-
-### Ingesting data
-- [Python Elasticsearch client](https://www.elastic.co/docs/reference/elasticsearch/clients/python) - what the notebook uses
-- [Bulk API](https://www.elastic.co/docs/api/doc/elasticsearch/operation/operation-bulk) - efficient batch indexing
-- [Upload a file in Kibana](https://www.elastic.co/docs/manage-data/ingest/upload-data-files) - no-code CSV/JSON ingest
-
-### AI models - Elastic Inference Service (EIS, recommended) & AWS Bedrock
-- **[EIS guide (this repo)](https://github.com/jdarmada/elastic-aws-hacknight/blob/main/eis_guide.md)** - use Bedrock-hosted LLMs and embeddings with zero setup, no keys
-- [Elastic Inference Service docs](https://www.elastic.co/docs/explore-analyze/elastic-inference/eis)
-- [Model configuration in Agent Builder](https://www.elastic.co/docs/explore-analyze/ai-features/agent-builder/models)
-
-
-
-
+*Topics: Elasticsearch · Elastic Serverless · Elastic Agent Builder · Elastic Inference Service (EIS) · AWS Bedrock · semantic search · semantic_text · vector search · kNN · ES|QL · retrieval-augmented generation (RAG) · AI agents · sports analytics · FIFA World Cup 2026 · Python*

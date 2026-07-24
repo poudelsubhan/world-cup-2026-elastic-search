@@ -1,4 +1,4 @@
-# World Cup 2026 — Elastic Semantic Search & Prediction Agents
+# World Cup 2026: Elastic Semantic Search & Prediction Agents
 
 **A live 2026 FIFA World Cup match predictor and semantic "vibe search" match explorer, built on Elasticsearch Serverless, Elastic Agent Builder, and AWS Bedrock via the Elastic Inference Service (EIS) — zero LLM API keys required.**
 

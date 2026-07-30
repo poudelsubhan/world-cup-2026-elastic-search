@@ -4,3 +4,15 @@
 __pycache__/
 *.pyc
 
+
+# Internal/proprietary docs — do not publish
+CLAUDE.md
+AGENTS.md
+.claude/
+plan*.md
+Plan*.md
+PLAN*.md
+phase*.md
+Phase*.md
+PHASE*.md
+docs/phase-*-summary.md
